@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import '../utils/hash.dart'; // Make sure this points to your hash.dart
 
 class AppDatabase {
   static final AppDatabase instance = AppDatabase._init();
@@ -11,6 +12,8 @@ class AppDatabase {
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDB('pos_app.db');
+    // Insert default user after creating DB
+    await insertTestUser();
     return _database!;
   }
 
@@ -66,8 +69,39 @@ class AppDatabase {
     await db.execute(txnItemsTable);
   }
 
+  Future<void> insertTestUser() async {
+    final db = await database;
+
+    // Check if test user already exists
+    final existing = await db.query(
+      'users',
+      where: 'username = ?',
+      whereArgs: ['admin'],
+    );
+
+    if (existing.isEmpty) {
+      final hashedPassword = hashPassword('1234');
+      await db.insert('users', {
+        'full_name': 'Admin',
+        'username': 'admin',
+        'email': 'admin@test.com',
+        'password': hashedPassword,
+      });
+    }
+  }
+
   Future close() async {
     final db = await instance.database;
     db.close();
   }
+}
+
+Future<List<Map<String, dynamic>>> getDailySummary() async {
+  final db = await AppDatabase.instance.database;
+  return await db.rawQuery('''
+    SELECT DATE(created_at) as day, SUM(total) as total
+    FROM txns
+    GROUP BY DATE(created_at)
+    ORDER BY DATE(created_at) DESC
+  ''');
 }
